@@ -1,32 +1,13 @@
-function [n, P, nMean, nMeanBinned, nMeanBinnedBaseline, nVarBinnedBaseline] = plotStimResults(obj, dF, scopeStimArtefact, stimLog, n, P, spikeThreshold, nBins, stimsPerTrain, mirrorPosList)
-% function [n P] = plotStimResults(obj, dF, scopeStimArtefact, stimLog, n, P, plotMethod, spikeThreshold, nBins)
+function [n, P, nReshaped, nReshapedBaseline, h] = plotStimResults(obj, dF, spikeThreshold, nBins, n, P, stimParams)
+% If there are more than 4 stimulation positions, might need more colors. But 4 should be enough.
+colors = 'rgbc';
 
-
-% Separate stimulations based on mirror position
-if isempty(stimsPerTrain)
-    stimsPerTrain = 7;
-end
-if isempty(mirrorPosList)
-    mirrorPosList = {...
-        [-1.2,-0.8],...
-        [2.8,3.2]...
-    };
-end
-colors = 'rg';
-
-scopeStimParams = scopeStimArtefact;
-
-for iStim = 1:length(stimLog)
-	mirrorPos = stimLog(iStim).mirrorPos;
-	iPulses = ((iStim - 1)*stimsPerTrain + 1):iStim*stimsPerTrain;
-	scopeStimParams(iPulses, 2:3) = repmat(mirrorPos, length(iPulses), 1);
-	scopeStimParams(iPulses, 4) = 0;
-	for iMirrorPos = 1:length(mirrorPosList)
-		if isequal(single(mirrorPos), single(mirrorPosList{iMirrorPos}))
-			scopeStimParams(iPulses, 4) = iMirrorPos;
-		end
-	end		
-end
+scopeStimParams 	= getScopeStimParams(stimParams);
+scopeStimArtefact 	= stimParams.scopeStimArtefact;
+stimLog 			= stimParams.stimLog;
+stimsPerTrain		= stimParams.stimsPerTrain;
+mirrorPosList		= stimParams.stimsPerTrain;
+scopeFramePeriod	= obj.metaDataSI.SI4.scanFramePeriod;
 
 %% 1. Remove stim artefact, interpolate for stim frames
 dF = removeStimArtefact(dF, scopeStimArtefact);
@@ -44,7 +25,7 @@ end
 
 
 % time in seconds
-t = obj.metaDataSI.SI4.scanFramePeriod * (1:size(dF, 2));
+t = scopeFramePeriod * (1:size(dF, 2));
 
 % Plot all traces + stim times
 figure('units', 'normalized', 'outerposition', [0 0 1 1]);
@@ -66,7 +47,7 @@ title('\DeltaF/F')
 
 
 %% 2. Deconvolve the traces using oopsi (fnnd) Volgostein (2010)
-if isempty(n) || isempty (P)
+if isempty(n) || isempty (P) % Skipped if deconvolution already done since this is quite slow.
 	for iTrace = 1:size(dF, 1)
 		[n(iTrace,1:size(dF, 2)), P{iTrace}] = fast_oopsi(dF(iTrace,:));
 	end
@@ -132,66 +113,72 @@ ylabel('Neurons/Spikes')
 title(['Deconvoluted Spikes (Threshold = ', num2str(spikeThreshold), ')'])
 
 
-%% 4. Plot spike timing (relative to stimulation offset) histogram
-% We can use the deconvoluted spike probability traces for this
+%% 4. Plot spike timing (relative to stimulation offset) using the deconvoluted spike probability traces
+% i) 	Extract and reshape traces (split into bins/trials/...)
+% ii) 	Get mean binned traces for plotting
+% iii) 	Run some statistical tests
+% iv)	Now plot dat ting
+
+% First sort the raw traces according to max spike amplitude
 nSorted = n;
 nSorted = horzcat(nSorted, max(dF, [], 2));
 nSorted = sortrows(nSorted, size(nSorted, 2));
 nSorted = nSorted(:,1:(end - 1));
 
-% Group into bins and take the average
+% i) Reshape the deconvolute spike probability traces n(iTrace, iFrame) into 
+% 		nReshaped(iStimLoc).n(iTrace, iFrame, iBin, iTrialNewIndex) and 
+% 		nReshapedBaseline(iTrace, iFrame, iBin, iTrial)
+[nReshaped, nReshapedBaseline] = reshapeTraces(nSorted, nBins, stimParams);
 
-% Binning Method: Mean spiking probability in bin (spike probability for each bin)
-for iTrace = 1:size1(nSorted)
-	[nMean(:, :, iTrace), nVar(:, :, iTrace)] = averageStimTrials(nSorted(iTrace, :), stimLog, scopeStimParams);
-	[nMeanBaseline(iTrace, :), nVarBaseline(iTrace, :)] = averageBaselineTrials(nSorted(iTrace, :), stimLog, scopeStimParams);
+nStimLocs 		= length(nReshaped);
+nTraces 		= size1(nReshapedBaseline);
+framesPerBin 	= size2(nReshapedBaseline);
+
+% ii) Get binned mean traces for plotting
+for iStimLoc = 1:nStimLocs
+	nMean(iStimLoc).n = squeeze(mean(mean(nReshaped(iStimLoc).n, 4), 2));
+end
+nMeanBaseline = squeeze(mean(mean(nReshapedBaseline, 4), 2));
+
+% iii) Perform two-sample t test between stim and baseline traces, assuming unknown and unequal variances.
+for iStimLoc = 1:nStimLocs
+	for iTrace = 1:nTraces
+		for iBin = 1:nBins
+			xStim = nReshaped(iStimLoc).n(iTrace, :, iBin, :);
+			xBase = nReshapedBaseline(iTrace, :, iBin, :);
+			h(iStimLoc).h(iTrace, iBin) = ttest2(xStim(:), xBase(:), 'Alpha', 0.01, 'Tail', 'right', 'Vartype', 'unequal');
+		end
+	end
 end
 
-if isempty(nBins)
-	nBins = 20;
-end
-binSize = floor(size2(nMean)/nBins);
+% iv) Now plot dat ting
+nMeanStackHeight = maxel([nMean.n]);
+nMeanStacked = nMean;
+nMeanStackedBaseline = nMeanBaseline;
 
-for iBin = 1:nBins
-	p = nMean(:, ((iBin - 1)*binSize + 1):iBin*binSize, :);
-	nMeanBinned(:, iBin, :) = mean(p, 2);
+t = scopeFramePeriod*(1:framesPerBin:nBins*framesPerBin);
 
-	vars = nVar(:, ((iBin - 1)*binSize + 1):iBin*binSize);
-	nVarBinned = sum(vars, 2)./(binSize^2); % Variance is additive assuming independence between spike probabilities at different timepoints.
-
-	pBaseline = nMeanBaseline(:, ((iBin - 1)*binSize + 1):iBin*binSize);
-	nMeanBinnedBaseline(:, iBin) = mean(pBaseline, 2);
-
-	varBaseline = nVarBaseline(:, ((iBin - 1)*binSize + 1):iBin*binSize);
-	nVarBinnedBaseline = sum(varBaseline, 2)./(binSize^2); % Variance is additive assuming independence between spike probabilities at different timepoints.
-end
-
-% Stack the binned mean spiking probabilities for each cell
-% nMeanBinnedStackHeight = 0.5;
-nMeanBinnedStackHeight = 1*max(nMeanBinned(:));
-nMeanBinnedStacked = nMeanBinned;
-nMeanBinnedStackedBaseline = nMeanBinnedBaseline;
-tBinned = obj.metaDataSI.SI4.scanFramePeriod*(1:binSize:nBins*binSize);
-
-for iTrace = 1:size(nMeanBinned, 3)
-	nMeanBinnedStacked(:, :, iTrace) = nMeanBinnedStacked(:, :, iTrace) + (iTrace - 1)*nMeanBinnedStackHeight;
-	nMeanBinnedStackedBaseline(iTrace, :) = nMeanBinnedStackedBaseline(iTrace, :) + (iTrace - 1)*nMeanBinnedStackHeight;
+for iStimLoc = 1:nStimLocs
+	nMeanStacked(iStimLoc).n = nMeanStacked(iStimLoc).n + repmat((0:(nTraces - 1))', [1, nBins]).*nMeanStackHeight;
+	nMeanStackedBaseline = nMeanStackedBaseline + repmat((0:(nTraces - 1))', [1, nBins]).*nMeanStackHeight;
 end
 
 figWidth = 0.1;
 
-for iStimLoc = 1:size(nMeanBinned, 1)
+for iStimLoc = 1:nStimLocs
 	figure('units', 'normalized', 'outerposition', [min(figWidth*(iStimLoc - 1), 1 - figWidth), 0, figWidth, 1]), hold on
-	for iTrace = 1:size(nMeanBinned, 3)
-		plot(tBinned, nMeanBinnedStacked(iStimLoc, :, iTrace), 'k');
-		plot(tBinned, nMeanBinnedStackedBaseline(iTrace, :), 'k--');
-		plot(tBinned, nMeanBinnedStackHeight*(iTrace - 1) + zeros(size(tBinned)), 'k:');
+	for iTrace = 1:nTraces
+		xmarkers = t(find(h(iStimLoc).h(iTrace, :)==1));
+		ymarkers = nMeanStacked(iStimLoc).n(iTrace, find(h(iStimLoc).h(iTrace, :)==1));
+		plot(t, nMeanStacked(iStimLoc).n(iTrace, :), 'k', xmarkers, ymarkers,'k*');
+		plot(t, nMeanStackedBaseline(iTrace, :), 'k--');
+		plot(t, nMeanStackHeight*(iTrace - 1) + zeros(size(t)), 'k:');
 	end
-	plot(tBinned, iTrace + zeros(size(tBinned)), 'k:');
+	plot(t, nMeanStackHeight*iTrace + zeros(size(t)), 'k:');
 	hold off
 	xlabel('Time After Stimulation (s)')
 	ylabel('Neurons/Mean Spike Probability Across Trials')
 	title(['Mean Traces Across Trials, Stim Loc ', num2str(iStimLoc)])
-	ylim([0, (1 + size(nMeanBinned, 3))*nMeanBinnedStackHeight])
-	xlim([0, maxel(tBinned)])
+	ylim([0, (1 + nTraces)*nMeanStackHeight])
+	xlim([0, maxel(t)])
 end
