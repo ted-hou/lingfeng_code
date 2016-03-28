@@ -212,26 +212,35 @@ nSorted = n;
 % ii) 	Calculate the mean
 
 % i)	Extract traces 5 seconds before and after stimulation
-timeRadius = 15;
-secondsPerBin = 0.5;
-% secondsPerBin = 0.1;
-[nReshapedStim] = reshapeStimTraces(nSorted, timeRadius, secondsPerBin, stimParams);
+timeRadius = 5;
+secondsPerBin = 0.25;
+nBinsHalf = floor(timeRadius/secondsPerBin);
+% reshapeTraces: Reshape the traces array n(iTrace, iFrame) into nReshaped(iStimLoc).n(iTrace, iFrame, iBin, iTrialNewIndex)
+[nReshapedStim] = reshapeStimTraces(nSorted, secondsPerBin, stimParams);
 
 % ii)	Calculate mean traces for each ROI
 for iStimLoc = 1:nStimLocs
-	nPreStim 	= nReshapedStim(iStimLoc).nPreStim;
+	nStim 		= nReshapedStim(iStimLoc).n(:, :, 1, 2:end);
+	nPreStim 	= nReshapedStim(iStimLoc).n(:, :, end - nBinsHalf + 1:end, 1:end - 1);
+	nPostStim	= nReshapedStim(iStimLoc).n(:, :, 2:1+nBinsHalf, 2:end);
 
-	% nMeanStim(iStimLoc).nPreStim 	= squeeze(mean(mean(nReshapedStim(iStimLoc).nPreStim, 4), 2));
-	% nMeanStim(iStimLoc).nPostStim 	= squeeze(mean(mean(nReshapedStim(iStimLoc).nPostStim, 4), 2));
-	nMeanStim(iStimLoc).nPreStim 	= squeeze(mean(mean(nReshapedStim(iStimLoc).nPreStim(:, :, :, 2:end), 4), 2));
-	nMeanStim(iStimLoc).nPostStim 	= squeeze(mean(mean(nReshapedStim(iStimLoc).nPostStim(:, :, :, 1:end-1), 4), 2));
-	nMeanStim(iStimLoc).nStim 		= mean(mean(nReshapedStim(iStimLoc).nStim, 3), 2);
+	nMeanStim(iStimLoc).nPreStim 	= squeeze(nanmean(nanmean(nPreStim, 4), 2));
+	nMeanStim(iStimLoc).nPostStim 	= squeeze(nanmean(nanmean(nPostStim, 4), 2));
+	nMeanStim(iStimLoc).nStim 		= squeeze(nanmean(nanmean(nStim, 4), 2));
 	nMeanStim(iStimLoc).nAll 		= horzcat(nMeanStim(iStimLoc).nPreStim, nMeanStim(iStimLoc).nStim, nMeanStim(iStimLoc).nPostStim);
 
-	arr = nReshapedStim(iStimLoc).nPreStim; 	nMeanStim(iStimLoc).stdPreStim 	= squeeze(std(reshape(permute(arr, [1, 2, 4, 3]), [nTraces, size(arr, 2)*size(arr, 4), size(arr, 3)]), 0, 2));
-	arr = nReshapedStim(iStimLoc).nPostStim; 	nMeanStim(iStimLoc).stdPostStim = squeeze(std(reshape(permute(arr, [1, 2, 4, 3]), [nTraces, size(arr, 2)*size(arr, 4), size(arr, 3)]), 0, 2));
-	arr = nReshapedStim(iStimLoc).nStim; 		nMeanStim(iStimLoc).stdStim		= std(reshape(arr, [nTraces, size(arr, 2)*size(arr, 3)]), 0, 2);
-	nMeanStim(iStimLoc).stdAll = horzcat(nMeanStim(iStimLoc).stdPreStim, nMeanStim(iStimLoc).stdStim, nMeanStim(iStimLoc).stdPostStim);
+
+	% % nMeanStim(iStimLoc).nPreStim 	= squeeze(mean(mean(nReshapedStim(iStimLoc).nPreStim, 4), 2));
+	% % nMeanStim(iStimLoc).nPostStim 	= squeeze(mean(mean(nReshapedStim(iStimLoc).nPostStim, 4), 2));
+	% nMeanStim(iStimLoc).nPreStim 	= squeeze(mean(mean(nReshapedStim(iStimLoc).nPreStim(:, :, :, 2:end), 4), 2));
+	% nMeanStim(iStimLoc).nPostStim 	= squeeze(mean(mean(nReshapedStim(iStimLoc).nPostStim(:, :, :, 1:end-1), 4), 2));
+	% nMeanStim(iStimLoc).nStim 		= mean(mean(nReshapedStim(iStimLoc).nStim, 3), 2);
+	% nMeanStim(iStimLoc).nAll 		= horzcat(nMeanStim(iStimLoc).nPreStim, nMeanStim(iStimLoc).nStim, nMeanStim(iStimLoc).nPostStim);
+
+	arr = nPreStim; 	nMeanStim(iStimLoc).stdPreStim 	= squeeze(nanstd(reshape(permute(arr, [1, 2, 4, 3]), [nTraces, size(arr, 2)*size(arr, 4), size(arr, 3)]), 0, 2));
+	arr = nPostStim; 	nMeanStim(iStimLoc).stdPostStim = squeeze(nanstd(reshape(permute(arr, [1, 2, 4, 3]), [nTraces, size(arr, 2)*size(arr, 4), size(arr, 3)]), 0, 2));
+	arr = nStim; 		nMeanStim(iStimLoc).stdStim 	= squeeze(nanstd(reshape(permute(arr, [1, 2, 4, 3]), [nTraces, size(arr, 2)*size(arr, 4), size(arr, 3)]), 0, 2));
+						nMeanStim(iStimLoc).stdAll 		= horzcat(nMeanStim(iStimLoc).stdPreStim, nMeanStim(iStimLoc).stdStim, nMeanStim(iStimLoc).stdPostStim);
 end
 
 % iii)	Plot dat
