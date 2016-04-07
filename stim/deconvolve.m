@@ -52,7 +52,6 @@ deconvInSpikes = zeros(size(dF));
 
 parfor i = 1:size(dF, 1)
     try
-        i
         [c(i, :), b(i), c1(i), g(i, :), sn(i), sp] = constrained_foopsi(dF(i, :), [], [], [], [], opt);
         maxPulse = max(impulseAR(g(i, :)));
         deconvInSpikes(i, :) = sp*maxPulse/unitaryDF;
