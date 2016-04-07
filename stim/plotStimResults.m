@@ -1,4 +1,4 @@
-function [constrainedFoopsi, spikesReshaped, spikesMean] = plotStimResults(dF, constrainedFoopsi, stimParams, timeRadius, expName, expId, forceStackHeight)
+function [n, P, nReshapedStim, nMeanStim] = plotStimResults(dF, spikeThreshold, n, P, stimParams, timeRadius, expName, expId, forceStackHeight)
 % If there are more than 4 stimulation positions, might need more colors. But 4 should be enough.
 if isempty(expName)
 	expName = '';
@@ -12,6 +12,8 @@ colors = 'rgbc';
 
 scopeStimParams 	= getScopeStimParams(stimParams);
 scopeStimArtefact 	= stimParams.scopeStimArtefact;
+stimLog 			= stimParams.stimLog;
+stimsPerTrain		= stimParams.stimsPerTrain;
 mirrorPosList		= stimParams.mirrorPosList;
 scopeFramePeriod	= 1/stimParams.scanFrameRate;
 nTraces 			= size1(dF);
@@ -23,6 +25,10 @@ dF = removeStimArtefact(dF, scopeStimArtefact);
 dFStackHeight = 1*maxel(dF);
 
 dFStacked = dF;
+dFStacked = horzcat(dFStacked, max(dF, [], 2));
+dFStacked = sortrows(dFStacked, size(dFStacked, 2));
+dFStacked = dFStacked(:,1:(size(dFStacked,2) - 1));
+
 for iTrace = 1:nTraces
 	dFStacked(iTrace, :) = dFStacked(iTrace, :) + (iTrace - 1)*dFStackHeight;
 end
@@ -54,19 +60,58 @@ ax.YTickLabel = cellfun(@num2str, num2cell(1:5:nTraces), 'UniformOutput', false)
 ax.TickLength = [0 0];
 
 
-%% 2. Deconvolve the traces using constrained foopsi from Volgostein
-if isempty(constrainedFoopsi) % Skipped if deconvolution already done
-    constrainedFoopsi = deconvolve(dF);
+%% 2. Deconvolve the traces using oopsi (fnnd) Volgostein (2010)
+if isempty(n) || isempty (P) % Skipped if deconvolution already done since this is quite slow.
+	for iTrace = 1:nTraces
+		[n(iTrace,1:nFramesPerTrace), P{iTrace}] = fast_oopsi(dF(iTrace,:));
+	end
 end
 
-calcium = constrainedFoopsi.c;
-spikes = constrainedFoopsi.deconvInSpikes;
+% Produce a stacked version of spike probabilities for plotting
+nStackHeight = 1;
 
-% Plot decovoluted calcium soncentrations
-calciumStackHeight = max(calcium(:));
-calciumStacked = calcium;
+nStacked = n;
+nStacked = horzcat(nStacked, max(dF, [], 2));
+nStacked = sortrows(nStacked, size(nStacked, 2));
+nStacked = nStacked(:,1:(end - 1));
+
 for iTrace = 1:nTraces
-	calciumStacked(iTrace, :) = calciumStacked(iTrace, :) + (iTrace - 1)*calciumStackHeight;
+	nStacked(iTrace, :) = nStacked(iTrace, :) + (iTrace - 1)*nStackHeight;
+end
+
+% Plot all spike probabilities + stim times
+figure('units', 'normalized', 'outerposition', [0 0 1 1])
+hold on;
+for iMirrorPos = 1:nStimLocs;
+	stimTrace = zeros(1, nFramesPerTrace);
+	frames = scopeStimArtefact(scopeStimParams(:, 4)==iMirrorPos);
+	stimTrace(frames') = (1 + nTraces)*nStackHeight;
+	plot(t, stimTrace', [colors(iMirrorPos),'-.'])
+end
+plot(t, nStacked', 'k'), hold off;
+
+ylim([0, (1 + nTraces)*nStackHeight])
+xlim([0, maxel(t)])
+xlabel('Time (s)')
+ylabel('Neurons/Spike Probability')
+title('Deconvoluted Spike Probability')
+ax = gca;
+ax.YTick = nStackHeight*(0.5:5:(nTraces - 0.5));	
+ax.YTickLabel = cellfun(@num2str, num2cell(1:5:nTraces), 'UniformOutput', false);
+ax.TickLength = [0 0];
+
+% Plot all spikes + stim times
+if isempty(spikeThreshold)
+	spikeThreshold = 0.7;
+end
+nThresholded = zeros(size(n));
+nThresholded(n>spikeThreshold) = 1;
+nStackedAndThresholded = horzcat(nThresholded, max(dF, [], 2));
+nStackedAndThresholded = sortrows(nStackedAndThresholded, size(nStackedAndThresholded, 2));
+nStackedAndThresholded = nStackedAndThresholded(:,1:(end - 1));
+
+for iTrace = 1:nTraces
+	nStackedAndThresholded(iTrace, :) = nStackedAndThresholded(iTrace, :) + (iTrace - 1)*nStackHeight;
 end
 
 figure('units', 'normalized', 'outerposition', [0 0 1 1])
@@ -74,75 +119,118 @@ hold on;
 for iMirrorPos = 1:nStimLocs;
 	stimTrace = zeros(1, nFramesPerTrace);
 	frames = scopeStimArtefact(scopeStimParams(:, 4)==iMirrorPos);
-	stimTrace(frames') = (1 + nTraces)*calciumStackHeight;
+	stimTrace(frames') = (1 + nTraces)*nStackHeight;
 	plot(t, stimTrace', [colors(iMirrorPos),'-.'])
 end
-plot(t, calciumStacked', 'k'), hold off;
+plot(t, nStackedAndThresholded', 'k'), hold off;
 
-ylim([0, (1 + nTraces)*calciumStackHeight])
+ylim([0, (1 + nTraces)*nStackHeight])
 xlim([0, maxel(t)])
 xlabel('Time (s)')
-ylabel('Neurons/Deconvoluted Calcium Concentrations')
-title('Deconvoluted Calcium Concentrations')
+ylabel('Neurons/Spikes')
+title(['Deconvoluted Spikes (Threshold = ', num2str(spikeThreshold), ')'])
 ax = gca;
-ax.YTick = calciumStackHeight*(0.5:5:(nTraces - 0.5));	
+ax.YTick = nStackHeight*(0.5:5:(nTraces - 0.5));	
 ax.YTickLabel = cellfun(@num2str, num2cell(1:5:nTraces), 'UniformOutput', false);
 ax.TickLength = [0 0];
 
-% Plot spike rate
-spikesStackHeight = max(spikes(:));
-spikesStacked = horzcat(spikes, max(dF, [], 2));
-spikesStacked = sortrows(spikesStacked, size(spikesStacked, 2));
-spikesStacked = spikesStacked(:,1:(end - 1));
+%% 4. Plot spike timing (relative to stimulation offset) using the deconvoluted spike probability traces
+% i) 	Extract and reshape traces (split into bins/trials/...)
+% ii) 	Get mean binned traces for plotting
+% iii) 	Run some statistical tests
+% iv)	Now plot dat ting
 
-for iTrace = 1:nTraces
-	spikesStacked(iTrace, :) = spikesStacked(iTrace, :) + (iTrace - 1)*spikesStackHeight;
-end
+% First sort the raw traces according to max spike amplitude
+nSorted = n;
+% nSorted = horzcat(nSorted, max(dF, [], 2));
+% nSorted = sortrows(nSorted, size(nSorted, 2));
+% nSorted = nSorted(:,1:(end - 1));
 
-figure('units', 'normalized', 'outerposition', [0 0 1 1])
-hold on;
-for iMirrorPos = 1:nStimLocs;
-	stimTrace = zeros(1, nFramesPerTrace);
-	frames = scopeStimArtefact(scopeStimParams(:, 4)==iMirrorPos);
-	stimTrace(frames') = (1 + nTraces)*spikesStackHeight;
-	plot(t, stimTrace', [colors(iMirrorPos),'-.'])
-end
-plot(t, spikesStacked', 'k'), hold off;
+% i) Reshape the deconvolute spike probability traces n(iTrace, iFrame) into 
+% 		nReshaped(iStimLoc).n(iTrace, iFrame, iBin, iTrialNewIndex) and 
+% 		nReshapedBaseline(iTrace, iFrame, iBin, iTrial)
+% [nReshaped, nReshapedBaseline] = reshapeTraces(nSorted, nBins, stimParams);
 
-ylim([0, (1 + nTraces)*spikesStackHeight])
-xlim([0, maxel(t)])
-xlabel('Time (s)')
-ylabel('Neurons/Spike Rate')
-title('Deconvoluted Spike Rate')
-ax = gca;
-ax.YTick = spikesStackHeight*(0.5:5:(nTraces - 0.5));	
-ax.YTickLabel = cellfun(@num2str, num2cell(1:5:nTraces), 'UniformOutput', false);
-ax.TickLength = [0 0];
+% framesPerBin = size2(nReshapedBaseline);
 
-%% 4. Plot aligned stim traces
-% i) 	Extract deconvoluted traces from t-timeRadius till t+timeRadius, (t=stim time), reshaped into spikesReshaped(iStimLoc).calcium(iTrace, iFrame, iBin, iTrialNewIndex)
+% % ii) Get binned mean traces for plotting
+% for iStimLoc = 1:nStimLocs
+% 	nMean(iStimLoc).n = squeeze(mean(mean(nReshaped(iStimLoc).n, 4), 2));
+% end
+% nMeanBaseline = squeeze(mean(mean(nReshapedBaseline, 4), 2));
+
+% % iii) Perform two-sample t test between stim and baseline traces, assuming unknown and unequal variances.
+% for iStimLoc = 1:nStimLocs
+% 	for iTrace = 1:nTraces
+% 		for iBin = 1:nBins
+% 			xStim = nReshaped(iStimLoc).n(iTrace, :, iBin, :);
+% 			xBase = nReshapedBaseline(iTrace, :, iBin, :);
+% 			h(iStimLoc).h(iTrace, iBin) = ttest2(xStim(:), xBase(:), 'Alpha', 0.01, 'Tail', 'right', 'Vartype', 'unequal');
+% 		end
+% 	end
+% end
+
+% % iv) Now plot dat ting
+% nMeanStackHeight = maxel([nMean.n]);
+% nMeanStacked = nMean;
+% nMeanStackedBaseline = nMeanBaseline;
+
+% t = scopeFramePeriod*(0.5*framesPerBin:framesPerBin:(nBins - 0.5)*framesPerBin);
+
+% for iStimLoc = 1:nStimLocs
+% 	nMeanStacked(iStimLoc).n = nMeanStacked(iStimLoc).n + repmat((0:(nTraces - 1))', [1, nBins]).*nMeanStackHeight;
+% 	nMeanStackedBaseline = nMeanStackedBaseline + repmat((0:(nTraces - 1))', [1, nBins]).*nMeanStackHeight;
+% end
+
+% figWidth = 0.1;
+
+% for iStimLoc = 1:nStimLocs
+% 	figure('units', 'normalized', 'outerposition', [min(figWidth*(iStimLoc - 1), 1 - figWidth), 0, figWidth, 1]), hold on
+% 	for iTrace = 1:nTraces
+% 		xmarkers = t(find(h(iStimLoc).h(iTrace, :)==1));
+% 		ymarkers = nMeanStacked(iStimLoc).n(iTrace, find(h(iStimLoc).h(iTrace, :)==1));
+% 		plot(t, nMeanStacked(iStimLoc).n(iTrace, :), 'k', xmarkers, ymarkers, 'k*', 'MarkerSize', 3);
+% 		plot(t, nMeanStackedBaseline(iTrace, :), 'k--');
+% 		plot(t, nMeanStackHeight*(iTrace - 1) + zeros(size(t)), 'k:');
+% 	end
+% 	plot(t, nMeanStackHeight*iTrace + zeros(size(t)), 'k:');
+% 	hold off
+% 	xlabel('Time After Stimulation (s)')
+% 	ylabel('Neurons/Mean Spike Probability Across Trials')
+% 	title(['Mean Traces Across Trials, Stim Loc ', num2str(iStimLoc)])
+% 	ylim([0, (1 + nTraces)*nMeanStackHeight])
+% 	xlim([0, maxel(t)])
+% 	ax = gca;
+% 	ax.YTick = nMeanStackHeight*(0.5:5:(nTraces - 0.5));	
+% 	ax.YTickLabel = cellfun(@num2str, num2cell(1:5:nTraces), 'UniformOutput', false);
+% 	ax.TickLength = [0 0];
+% end
+
+
+%% 5. Plot aligned stim traces
+% i) 	Extract deconvoluted traces from t-5 till t+5, (t=stim time), reshaped into nReshapedStim(iStimLoc).n(iTrace, iFrame, iBin, iTrialNewIndex)
 % ii) 	Calculate the mean
 
 % i)	Extract traces 5 seconds before and after stimulation
 secondsPerBin = scopeFramePeriod;
 % secondsPerBin = 0.1;
-spikesReshaped = reshapeTraces(spikes, timeRadius, secondsPerBin, stimParams);
+nReshapedStim = reshapeStimTraces(nSorted, timeRadius, secondsPerBin, stimParams);
 
 % ii)	Calculate mean traces for each ROI
-spikesMean = getMeanTraceAcrossTrials(spikesReshaped);
+nMeanStim = getMeanTraceAcrossTrials(nReshapedStim);
 
 % iii)	Plot dat
 if isempty(forceStackHeight)
-	spikesMeanStackHeight = maxel([spikesMean.all]+[spikesMean.stdAll]);
+	nMeanStimStackHeight = maxel([nMeanStim.nAll]+[nMeanStim.stdAll]);
 else
-	spikesMeanStackHeight = forceStackHeight;
+	nMeanStimStackHeight = forceStackHeight;
 end
-spikesMeanStacked = spikesMean;
+nMeanStimStacked = nMeanStim;
 
-t = secondsPerBin*horzcat((0.5 - size2(spikesMean(1).preStim)):1:-0.5, [0], 0.5:1:(size2(spikesMean(1).postStim) - 0.5));
+t = secondsPerBin*horzcat((0.5 - size2(nMeanStim(1).nPreStim)):1:-0.5, [0], 0.5:1:(size2(nMeanStim(1).nPostStim) - 0.5));
 
 for iStimLoc = 1:nStimLocs
-	spikesMeanStacked(iStimLoc).all = spikesMeanStacked(iStimLoc).all + repmat((0:(nTraces - 1))', [1, size2(spikesMeanStacked(1).all)]).*spikesMeanStackHeight;
+	nMeanStimStacked(iStimLoc).nAll = nMeanStimStacked(iStimLoc).nAll + repmat((0:(nTraces - 1))', [1, size2(nMeanStimStacked(1).nAll)]).*nMeanStimStackHeight;
 end
 
 figWidth = 0.1;
@@ -150,20 +238,20 @@ figWidth = 0.1;
 for iStimLoc = 1:nStimLocs
 	figure('units', 'normalized', 'outerposition', [min(figWidth*(nStimLocs*expId + iStimLoc - 1), 1 - figWidth), 0, figWidth, 1]), hold on
 	for iTrace = 1:nTraces
-		% shadedErrorBar(t, spikesMeanStacked(iStimLoc).all(iTrace, :), spikesMean(iStimLoc).stdAll(iTrace, :));	% Mean trace with errorbar (std)
-		plot(t, spikesMeanStacked(iStimLoc).all(iTrace, :), 'k');			% Mean trace
-		plot(t, spikesMeanStackHeight*(iTrace - 1) + zeros(size(t)), 'k:');
+		% shadedErrorBar(t, nMeanStimStacked(iStimLoc).nAll(iTrace, :), nMeanStim(iStimLoc).stdAll(iTrace, :));	% Mean trace with errorbar (std)
+		plot(t, nMeanStimStacked(iStimLoc).nAll(iTrace, :), 'k');			% Mean trace
+		plot(t, nMeanStimStackHeight*(iTrace - 1) + zeros(size(t)), 'k:');
 	end
-	plot(t, spikesMeanStackHeight*iTrace + zeros(size(t)), 'k:');
-	line([0, 0],[0, (1 + nTraces)*spikesMeanStackHeight], 'Color', 'k', 'LineStyle', ':');
+	plot(t, nMeanStimStackHeight*iTrace + zeros(size(t)), 'k:');
+	line([0, 0],[0, (1 + nTraces)*nMeanStimStackHeight], 'Color', 'k', 'LineStyle', ':');
 	hold off
 	xlabel('Time (s)')
-	ylabel(['Cell ID/Mean Spike Rate (Grid height = ', num2str(spikesMeanStackHeight), ')'])
+	ylabel(['Cell ID/Mean Spike Probability (Grid height = ', num2str(nMeanStimStackHeight), ')'])
 	title([expName, num2str(iStimLoc)])
-	ylim([0, (1 + nTraces)*spikesMeanStackHeight])
+	ylim([0, (1 + nTraces)*nMeanStimStackHeight])
 	xlim([t(1), t(end)])
 	ax = gca;
-	ax.YTick = spikesMeanStackHeight*(0.5:5:(nTraces - 0.5));	
+	ax.YTick = nMeanStimStackHeight*(0.5:5:(nTraces - 0.5));	
 	ax.YTickLabel = cellfun(@num2str, num2cell(1:5:nTraces), 'UniformOutput', false);
 	ax.TickLength = [0 0];
 end
