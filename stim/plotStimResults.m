@@ -1,4 +1,4 @@
-function [n, P] = plotStimResults(dF, spikeThreshold, n, P, stimParams, expName, expId, forceStackHeight)
+function [n, P, nReshapedStim, nMeanStim] = plotStimResults(dF, spikeThreshold, n, P, stimParams, timeRadius, expName, expId, forceStackHeight)
 % If there are more than 4 stimulation positions, might need more colors. But 4 should be enough.
 if isempty(expName)
 	expName = '';
@@ -22,7 +22,7 @@ nStimLocs 			= length(mirrorPosList);
 %% 1. Remove stim artefact, interpolate for stim frames
 dF = removeStimArtefact(dF, scopeStimArtefact);
 
-dFStackHeight = 0.25*maxel(dF);
+dFStackHeight = 1*maxel(dF);
 
 dFStacked = dF;
 dFStacked = horzcat(dFStacked, max(dF, [], 2));
@@ -38,26 +38,26 @@ end
 t = scopeFramePeriod * (1:nFramesPerTrace);
 
 % Plot all traces + stim times
-% figure('units', 'normalized', 'outerposition', [0 0 1 1]);
-% hold on;
-% for iMirrorPos = 1:nStimLocs;
-% 	stimTrace = zeros(1, nFramesPerTrace);
-% 	frames = scopeStimArtefact(scopeStimParams(:, 4)==iMirrorPos);
-% 	stimTrace(frames') = (1 + nTraces)*dFStackHeight;
-% 	plot(t, stimTrace', [colors(iMirrorPos),'-.'])
-% end
+figure('units', 'normalized', 'outerposition', [0 0 1 1]);
+hold on;
+for iMirrorPos = 1:nStimLocs;
+	stimTrace = zeros(1, nFramesPerTrace);
+	frames = scopeStimArtefact(scopeStimParams(:, 4)==iMirrorPos);
+	stimTrace(frames') = (1 + nTraces)*dFStackHeight;
+	plot(t, stimTrace', [colors(iMirrorPos),'-.'])
+end
 
-% plot(t, dFStacked', 'k'), hold off;
+plot(t, dFStacked', 'k'), hold off;
 
-% ylim([0, (1 + nTraces)*dFStackHeight])
-% xlim([0, maxel(t)])
-% xlabel('Time (s)')
-% ylabel('Neurons/GCaMP Signal (\DeltaF/F)')
-% title('\DeltaF/F')
-% ax = gca;
-% ax.YTick = dFStackHeight*(0.5:5:(nTraces - 0.5));	
-% ax.YTickLabel = cellfun(@num2str, num2cell(1:5:nTraces), 'UniformOutput', false);
-% ax.TickLength = [0 0];
+ylim([0, (1 + nTraces)*dFStackHeight])
+xlim([0, maxel(t)])
+xlabel('Time (s)')
+ylabel('Neurons/GCaMP Signal (\DeltaF/F)')
+title('\DeltaF/F')
+ax = gca;
+ax.YTick = dFStackHeight*(0.5:5:(nTraces - 0.5));	
+ax.YTickLabel = cellfun(@num2str, num2cell(1:5:nTraces), 'UniformOutput', false);
+ax.TickLength = [0 0];
 
 
 %% 2. Deconvolve the traces using oopsi (fnnd) Volgostein (2010)
@@ -80,25 +80,25 @@ for iTrace = 1:nTraces
 end
 
 % Plot all spike probabilities + stim times
-% figure('units', 'normalized', 'outerposition', [0 0 1 1])
-% hold on;
-% for iMirrorPos = 1:nStimLocs;
-% 	stimTrace = zeros(1, nFramesPerTrace);
-% 	frames = scopeStimArtefact(scopeStimParams(:, 4)==iMirrorPos);
-% 	stimTrace(frames') = (1 + nTraces)*nStackHeight;
-% 	plot(t, stimTrace', [colors(iMirrorPos),'-.'])
-% end
-% plot(t, nStacked', 'k'), hold off;
+figure('units', 'normalized', 'outerposition', [0 0 1 1])
+hold on;
+for iMirrorPos = 1:nStimLocs;
+	stimTrace = zeros(1, nFramesPerTrace);
+	frames = scopeStimArtefact(scopeStimParams(:, 4)==iMirrorPos);
+	stimTrace(frames') = (1 + nTraces)*nStackHeight;
+	plot(t, stimTrace', [colors(iMirrorPos),'-.'])
+end
+plot(t, nStacked', 'k'), hold off;
 
-% ylim([0, (1 + nTraces)*nStackHeight])
-% xlim([0, maxel(t)])
-% xlabel('Time (s)')
-% ylabel('Neurons/Spike Probability')
-% title('Deconvoluted Spike Probability')
-% ax = gca;
-% ax.YTick = nStackHeight*(0.5:5:(nTraces - 0.5));	
-% ax.YTickLabel = cellfun(@num2str, num2cell(1:5:nTraces), 'UniformOutput', false);
-% ax.TickLength = [0 0];
+ylim([0, (1 + nTraces)*nStackHeight])
+xlim([0, maxel(t)])
+xlabel('Time (s)')
+ylabel('Neurons/Spike Probability')
+title('Deconvoluted Spike Probability')
+ax = gca;
+ax.YTick = nStackHeight*(0.5:5:(nTraces - 0.5));	
+ax.YTickLabel = cellfun(@num2str, num2cell(1:5:nTraces), 'UniformOutput', false);
+ax.TickLength = [0 0];
 
 % Plot all spikes + stim times
 if isempty(spikeThreshold)
@@ -114,25 +114,25 @@ for iTrace = 1:nTraces
 	nStackedAndThresholded(iTrace, :) = nStackedAndThresholded(iTrace, :) + (iTrace - 1)*nStackHeight;
 end
 
-% figure('units', 'normalized', 'outerposition', [0 0 1 1])
-% hold on;
-% for iMirrorPos = 1:nStimLocs;
-% 	stimTrace = zeros(1, nFramesPerTrace);
-% 	frames = scopeStimArtefact(scopeStimParams(:, 4)==iMirrorPos);
-% 	stimTrace(frames') = (1 + nTraces)*nStackHeight;
-% 	plot(t, stimTrace', [colors(iMirrorPos),'-.'])
-% end
-% plot(t, nStackedAndThresholded', 'k'), hold off;
+figure('units', 'normalized', 'outerposition', [0 0 1 1])
+hold on;
+for iMirrorPos = 1:nStimLocs;
+	stimTrace = zeros(1, nFramesPerTrace);
+	frames = scopeStimArtefact(scopeStimParams(:, 4)==iMirrorPos);
+	stimTrace(frames') = (1 + nTraces)*nStackHeight;
+	plot(t, stimTrace', [colors(iMirrorPos),'-.'])
+end
+plot(t, nStackedAndThresholded', 'k'), hold off;
 
-% ylim([0, (1 + nTraces)*nStackHeight])
-% xlim([0, maxel(t)])
-% xlabel('Time (s)')
-% ylabel('Neurons/Spikes')
-% title(['Deconvoluted Spikes (Threshold = ', num2str(spikeThreshold), ')'])
-% ax = gca;
-% ax.YTick = nStackHeight*(0.5:5:(nTraces - 0.5));	
-% ax.YTickLabel = cellfun(@num2str, num2cell(1:5:nTraces), 'UniformOutput', false);
-% ax.TickLength = [0 0];
+ylim([0, (1 + nTraces)*nStackHeight])
+xlim([0, maxel(t)])
+xlabel('Time (s)')
+ylabel('Neurons/Spikes')
+title(['Deconvoluted Spikes (Threshold = ', num2str(spikeThreshold), ')'])
+ax = gca;
+ax.YTick = nStackHeight*(0.5:5:(nTraces - 0.5));	
+ax.YTickLabel = cellfun(@num2str, num2cell(1:5:nTraces), 'UniformOutput', false);
+ax.TickLength = [0 0];
 
 %% 4. Plot spike timing (relative to stimulation offset) using the deconvoluted spike probability traces
 % i) 	Extract and reshape traces (split into bins/trials/...)
@@ -212,27 +212,12 @@ nSorted = n;
 % ii) 	Calculate the mean
 
 % i)	Extract traces 5 seconds before and after stimulation
-timeRadius = 15;
-secondsPerBin = 0.5;
+secondsPerBin = scopeFramePeriod;
 % secondsPerBin = 0.1;
-[nReshapedStim] = reshapeStimTraces(nSorted, timeRadius, secondsPerBin, stimParams);
+nReshapedStim = reshapeStimTraces(nSorted, timeRadius, secondsPerBin, stimParams);
 
 % ii)	Calculate mean traces for each ROI
-for iStimLoc = 1:nStimLocs
-	nPreStim 	= nReshapedStim(iStimLoc).nPreStim;
-
-	% nMeanStim(iStimLoc).nPreStim 	= squeeze(mean(mean(nReshapedStim(iStimLoc).nPreStim, 4), 2));
-	% nMeanStim(iStimLoc).nPostStim 	= squeeze(mean(mean(nReshapedStim(iStimLoc).nPostStim, 4), 2));
-	nMeanStim(iStimLoc).nPreStim 	= squeeze(mean(mean(nReshapedStim(iStimLoc).nPreStim(:, :, :, 2:end), 4), 2));
-	nMeanStim(iStimLoc).nPostStim 	= squeeze(mean(mean(nReshapedStim(iStimLoc).nPostStim(:, :, :, 1:end-1), 4), 2));
-	nMeanStim(iStimLoc).nStim 		= mean(mean(nReshapedStim(iStimLoc).nStim, 3), 2);
-	nMeanStim(iStimLoc).nAll 		= horzcat(nMeanStim(iStimLoc).nPreStim, nMeanStim(iStimLoc).nStim, nMeanStim(iStimLoc).nPostStim);
-
-	arr = nReshapedStim(iStimLoc).nPreStim; 	nMeanStim(iStimLoc).stdPreStim 	= squeeze(std(reshape(permute(arr, [1, 2, 4, 3]), [nTraces, size(arr, 2)*size(arr, 4), size(arr, 3)]), 0, 2));
-	arr = nReshapedStim(iStimLoc).nPostStim; 	nMeanStim(iStimLoc).stdPostStim = squeeze(std(reshape(permute(arr, [1, 2, 4, 3]), [nTraces, size(arr, 2)*size(arr, 4), size(arr, 3)]), 0, 2));
-	arr = nReshapedStim(iStimLoc).nStim; 		nMeanStim(iStimLoc).stdStim		= std(reshape(arr, [nTraces, size(arr, 2)*size(arr, 3)]), 0, 2);
-	nMeanStim(iStimLoc).stdAll = horzcat(nMeanStim(iStimLoc).stdPreStim, nMeanStim(iStimLoc).stdStim, nMeanStim(iStimLoc).stdPostStim);
-end
+nMeanStim = getMeanTraceAcrossTrials(nReshapedStim);
 
 % iii)	Plot dat
 if isempty(forceStackHeight)
@@ -253,17 +238,15 @@ figWidth = 0.1;
 for iStimLoc = 1:nStimLocs
 	figure('units', 'normalized', 'outerposition', [min(figWidth*(nStimLocs*expId + iStimLoc - 1), 1 - figWidth), 0, figWidth, 1]), hold on
 	for iTrace = 1:nTraces
-		% shadedErrorBar(t, nMeanStimStacked(iStimLoc).nAll(iTrace, :), nMeanStim(iStimLoc).stdAll(iTrace, :));			% Mean trace
+		% shadedErrorBar(t, nMeanStimStacked(iStimLoc).nAll(iTrace, :), nMeanStim(iStimLoc).stdAll(iTrace, :));	% Mean trace with errorbar (std)
 		plot(t, nMeanStimStacked(iStimLoc).nAll(iTrace, :), 'k');			% Mean trace
-		% plot(t, min(nMeanStimStackHeight*(iTrace - 1) + 1, nMeanStimStacked(iStimLoc).nAll(iTrace, :) + nMeanStim(iStimLoc).stdAll(iTrace, :)), 'k:');
-		% plot(t, max(nMeanStimStackHeight*(iTrace - 1), nMeanStimStacked(iStimLoc).nAll(iTrace, :) - nMeanStim(iStimLoc).stdAll(iTrace, :)), 'k:');
 		plot(t, nMeanStimStackHeight*(iTrace - 1) + zeros(size(t)), 'k:');
 	end
 	plot(t, nMeanStimStackHeight*iTrace + zeros(size(t)), 'k:');
 	line([0, 0],[0, (1 + nTraces)*nMeanStimStackHeight], 'Color', 'k', 'LineStyle', ':');
 	hold off
 	xlabel('Time (s)')
-	ylabel(['Neurons/Mean Spike Probability (Grid height = ', num2str(nMeanStimStackHeight), ')'])
+	ylabel(['Cell ID/Mean Spike Probability (Grid height = ', num2str(nMeanStimStackHeight), ')'])
 	title([expName, num2str(iStimLoc)])
 	ylim([0, (1 + nTraces)*nMeanStimStackHeight])
 	xlim([t(1), t(end)])

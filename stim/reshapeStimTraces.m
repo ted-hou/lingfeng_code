@@ -17,14 +17,13 @@ nTrials				= length(stimLog);
 
 % Separate according to stimulated location
 stimLocationIds = unique(nonzeros(scopeStimParams(:, 4)));
-for iStimLoc = stimLocationIds'
-	nReshaped(iStimLoc).n = [];
-end
+trialIndices 	= zeros(numel(stimLocationIds), 1);
 
 % Separate into trials
 for iTrial = 1:nTrials
-	iStimLoc 			= scopeStimParams(iTrial*stimsPerTrain, 4);
-	iTrialForIndexing 	= iTrial;
+	iStimLoc 				= scopeStimParams(iTrial*stimsPerTrain, 4);
+	trialIndices(iStimLoc) 	= trialIndices(iStimLoc) + 1; 
+	iTrialForIndexing 		= trialIndices(iStimLoc);
 
 	nReshaped(iStimLoc).nStim(:, :, iTrialForIndexing) = ...
 		n(:, stimOnsetFrames(iTrial):stimOffsetFrames(iTrial));
