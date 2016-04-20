@@ -154,6 +154,7 @@ for iStimLoc = 1:nStimLocs
 		plot(t, spikesMeanStacked(iStimLoc).all(iTrace, :), 'k');			% Mean trace
 		plot(t, spikesMeanStackHeight*(iTrace - 1) + zeros(size(t)), 'k:');
 	end
+
 	plot(t, spikesMeanStackHeight*iTrace + zeros(size(t)), 'k:');
 	line([0, 0],[0, (1 + nTraces)*spikesMeanStackHeight], 'Color', 'k', 'LineStyle', ':');
 	hold off
